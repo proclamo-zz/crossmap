@@ -62,15 +62,16 @@
 	<script src="crossfilter.v1.min.js"></script>
 	<script src="d3.v3.min.js"></script>
 	<script src="topojson.v1.min.js"></script>
-	<script src="d3.layout.cloud.js"></script>
 	<script type="text/javascript">
+
+	var wiki, keyword, lat, lon, projection, svg, tags, x, brush, getMarkers, points;
 
 		d3.csv('wikipedia2.csv', function(error, wikipedia) {
 
 			if (error) throw error;
 
 			wikipedia.forEach(function(d, i) {
-				d.index = i;
+				
 				d.lat = parseFloat(d.lat);
 				d.lon = parseFloat(d.lon);
 				d.keywords = d.keywords;
@@ -83,10 +84,10 @@
 						!isNaN(el.lat) && !isNaN(el.lon);
 				});
 
-			var wiki = crossfilter(wikipedia);
-			var all = wiki.groupAll();
+			wiki = crossfilter(wikipedia);
+			//var all = wiki.groupAll();
 			
-			var keyword = wiki.dimension(function(d) { return d.keywords; });
+			keyword = wiki.dimension(function(d) { return d.keywords; });
 			
 			var reduceAdd = function(p, v) {
 		      /*
@@ -118,8 +119,8 @@
 		    }
 			
 
-		    var lat = wiki.dimension(function(d) { return d.lat; });
-		    var lon = wiki.dimension(function(d) { return d.lon; });
+		    lat = wiki.dimension(function(d) { return d.lat; });
+		    lon = wiki.dimension(function(d) { return d.lon; });
 
 			console.log("stop");
 
@@ -138,7 +139,7 @@
 				tagsWidth = 150,
 				color = d3.scale.category20b();
 
-			var projection = d3.geo.mercator()
+			projection = d3.geo.mercator()
 				.scale((width + 1) / 2 / Math.PI)
 				.translate([width / 2, height / 2])
 				.precision(.1);
@@ -146,18 +147,18 @@
 			var path = d3.geo.path()
 				.projection(projection);
 
-			var svg = d3.select('.map').append("svg")
+			svg = d3.select('.map').append("svg")
 				.attr("width", width)
 				.attr("height", height);
 
 
-			var tags = d3.select(".tags").append("svg")
+			tags = d3.select(".tags").append("svg")
 				.attr("width", tagsWidth)
 				.attr("height", height)
 				.append("g")
 				.attr("transform", "translate(8,6)");	
 
-			var x = d3.scale.linear().range([0, width]);
+			x = d3.scale.linear().range([0, width]);
 			//var y = d3.scale.linear().range([0, height]);
 
 			var updateKeywords = function() {
@@ -173,12 +174,7 @@
 				lon.filterRange([start[0], end[0]]);
 
 				drawKeywords();
-			}	
-			
-			var updateMarkers = function() {
-				svg.selectAll('.point')
-					.classed("selected", false);
-			}
+			}				
 
 			var brushend = function() {
 
@@ -193,35 +189,19 @@
 				d3.selectAll('.brush')
 					.call(brush);
 				
-				updateMarkers();
 				updateKeywords();
 			}
 
-			var brush = d3.svg.brush()
+			brush = d3.svg.brush()
 				.x(x)
 				.on("brush", updateKeywords)
 				.on("brushend", brushend);
-
-			/*	
-			var tagBrush = d3.svg.brush()
-				.y(y)
-				.on("brushend", updateMarkers);	
-			*/
 		
 			svg.append("g")
 				.attr("class", "brush")
 				.call(brush)
 				.selectAll('rect')
 				.attr("height", height);
-
-
-			/*	
-			tags.append("g")
-				.attr("class", "brush")
-				.call(tagBrush)
-				.selectAll('rect')
-				.attr("width", tagsWidth);			
-			*/
 
 			d3.json('world-50m.json', function(error, world) {
 
@@ -250,7 +230,7 @@
 
 				var data = lat.filterAll().top(Infinity);
 
-				svg.selectAll('.point')
+				points = svg.selectAll('.point')
 					.data(data)
 					.enter()
 						.append("svg:circle")
@@ -260,7 +240,9 @@
 						.attr("class", "point")
 						.on("mouseover", function(d) {
 							console.log(d);
-						})	
+						});
+
+				points.data(data).exit().remove();
 			}
 
 
@@ -303,7 +285,7 @@
 
 			}
 
-			var getMarkers = function() {
+			getMarkers = function() {
 				return keyword.top(Infinity).filter(function(el) {
 					return el.hasOwnProperty("lat") && el.hasOwnProperty("lon") && 
 						(+el.lat !== 0 && +el.lon !== 0);
@@ -313,24 +295,13 @@
 			var selectMarkers = function() {
 
 				svg.selectAll('.point')
-					.classed("selected", false);
-
-				d3.selectAll('.point').remove();	
+					.classed("selected", false);	
 
 				var markers = keyword.top(Infinity);
 
-				svg.selectAll('.point')
-					.data(markers)
-					.enter()
-						.append("svg:circle")
-						.attr("cx", function(d){ return projection([d.lon,d.lat])[0]; })
-						.attr("cy", function(d) { return projection([d.lon,d.lat])[1]; })
-						.attr("r", 3)
-						.attr("class", "point")
-						.on("mouseover", function(d) {
-							console.log(d);
-						})
-						.classed("selected", true);
+				points
+					.data(markers, function(d){ return [d.lon, d.lat]; })
+					.classed("selected", true);
 			}
 
 		});
