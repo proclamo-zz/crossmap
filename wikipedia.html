@@ -64,7 +64,7 @@
 	<script src="topojson.v1.min.js"></script>
 	<script type="text/javascript">
 
-	var wiki, keyword, lat, lon, projection, svg, tags, x, brush, getMarkers, points;
+	var wiki, keyword, lat, lon, projection, svg, tags, x, brush, points;
 
 		d3.csv('wikipedia2.csv', function(error, wikipedia) {
 
@@ -224,8 +224,6 @@
 
 			var drawMarkers = function() {
 
-				//var markers = getMarkers();
-
 				d3.selectAll('.point').remove();
 
 				var data = lat.filterAll().top(Infinity);
@@ -283,13 +281,6 @@
 							selectMarkers();
 						})
 
-			}
-
-			getMarkers = function() {
-				return keyword.top(Infinity).filter(function(el) {
-					return el.hasOwnProperty("lat") && el.hasOwnProperty("lon") && 
-						(+el.lat !== 0 && +el.lon !== 0);
-				});
 			}
 
 			var selectMarkers = function() {
