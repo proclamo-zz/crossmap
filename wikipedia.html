@@ -12,7 +12,15 @@
 		}
 
 		.map {
-			width: 960px;			
+			width: 960px;
+		}
+
+		.map svg {
+			background-color: white;
+		}
+
+		svg, g, rect {
+			pointer-events: all;
 		}
 
 		.tags {
@@ -22,39 +30,61 @@
 		}
 
 		.keyword {
-			cursor: pointer;
-			color: steelblue;			
+			cursor: pointer;			
 		}
 
 		.keyword:hover {
 			text-decoration: underline;
-			background-color: #dcd;	
 		}
 
 		.land {
 			opacity: .7;
 			stroke: #888;
+			
 		}
 
 		.point {
-			fill: #f00;
-			opacity: .5;			
+			fill: yellow;
+			opacity: .3;	
 		}
 
 		.point:hover {
-			fill: #f90;
+			fill: blue;
 			stroke: #000;
 		}
 
 		.selected {
-			fill: yellow;
+			fill: #f00;
+			opacity: .9;
+			cursor: pointer;
+		}
+
+		.brush, .brush .resize {
+			fill: green;
+			stroke: green;
+			pointer-events: all;
 		}
 
 		.brush .extent {
-		  stroke: #fff;
 		  fill-opacity: .125;
 		  shape-rendering: crispEdges;
 		}
+
+		.background {
+		  fill: none;
+		  pointer-events: all;
+		}
+
+		.tooltip {			
+			position: absolute;
+			min-width: 100px;
+			padding: 11px 10px;
+			background-color: #ECEEDD;	
+			opacity: 0;		
+			text-align: center;
+			border: 1px solid gray;
+		}
+
 	</style>
 </head>
 <body>
@@ -64,17 +94,19 @@
 	<script src="topojson.v1.min.js"></script>
 	<script type="text/javascript">
 
-	var wiki, keyword, lat, lon, projection, svg, tags, x, brush, points;
+	var wiki, keyword, path, lat, lon, projection, svg, tags, zoom, x, brush, brushSvg, points, extent,
+		tooltip, handleHeight = 50;
 
-		d3.csv('wikipedia2.csv', function(error, wikipedia) {
+		// load data
+		d3.csv('wikipedia.csv', function(error, wikipedia) {
 
 			if (error) throw error;
 
-			wikipedia.forEach(function(d, i) {
-				
+			wikipedia.forEach(function(d, i) {				
 				d.lat = parseFloat(d.lat);
 				d.lon = parseFloat(d.lon);
-				d.keywords = d.keywords;
+				d.keywords = d.keywords.split(";");
+				d.url = d.url.replace("'","").replace("'","");
 			});
 
 			wikipedia = wikipedia.filter(function(el) {
@@ -89,24 +121,22 @@
 			
 			keyword = wiki.dimension(function(d) { return d.keywords; });
 			
-			var reduceAdd = function(p, v) {
-		      /*
-		      v.keywords.forEach(function(val, idx) {
-		        p[val] = (p[val] || 0 ) + 1;
-		      });
-			*/
-			p[v.keywords] = (p[v.keywords] || 0) + 1;
-		      return p;
+			var reduceAdd = function(p, v) {		      
+		      	v.keywords.forEach(function(val, idx) {
+		        	p[val] = (p[val] || 0 ) + 1;
+		      	});
+			
+			  	//p[v.keywords] = (p[v.keywords] || 0) + 1;
+		      	return p;
 		    }
 
 		    var reduceRemove = function(p ,v) {
-		    /*	
-		      v.keywords.forEach(function(val, idx) {
-		        p[val] = (p[val] || 0 ) - 1;
-		      });
-		    */
-		   	p[v.keywords] = (p[v.keywords] || 0) - 1;  
-		      return p;
+				v.keywords.forEach(function(val, idx) {
+					p[val] = (p[val] || 0 ) - 1;
+				});
+		    
+		   		//p[v.keywords] = (p[v.keywords] || 0) - 1;  
+		    	return p;
 		    }
 
 		    var reduceInitial = function() {
@@ -118,11 +148,9 @@
 		    	return keyword.groupAll().reduce(reduceAdd, reduceRemove, reduceInitial).value();
 		    }
 			
-
 		    lat = wiki.dimension(function(d) { return d.lat; });
 		    lon = wiki.dimension(function(d) { return d.lon; });
 
-			console.log("stop");
 
 			// ejemplo de uso
 			// lat.filterRange([-10,0])
@@ -132,11 +160,11 @@
 			// lat.top(Infinity)	--> 16 elementos
 			
 
-			// mapa
-			
+			// build world
+			// 
 			var width = 960,
 				height = 600,
-				tagsWidth = 150,
+				tagsWidth = 200,
 				color = d3.scale.category20b();
 
 			projection = d3.geo.mercator()
@@ -144,13 +172,31 @@
 				.translate([width / 2, height / 2])
 				.precision(.1);
 
-			var path = d3.geo.path()
+			// zoom = d3.behavior.zoom()
+			//     .translate(projection.translate())
+			//     .scale(projection.scale())
+			//     .scaleExtent([0, Infinity])
+			//     .on("zoom", function(){
+			// 		projection.translate(d3.event.translate).scale(d3.event.scale);
+			// 		svg.selectAll("path").attr("d", path);	
+			// 	})
+			// 	.on("zoomend", function() {
+			// 		drawMarkers();
+			// 	});	
+
+			path = d3.geo.path()
 				.projection(projection);
 
 			svg = d3.select('.map').append("svg")
 				.attr("width", width)
 				.attr("height", height);
+     			
+     		//	.call(zoom);	
 
+     		// svg.append("rect")
+			    // .attr("class", "background")
+			    // .attr("width", width)
+			    // .attr("height", height);	
 
 			tags = d3.select(".tags").append("svg")
 				.attr("width", tagsWidth)
@@ -160,24 +206,77 @@
 
 			x = d3.scale.linear().range([0, width]);
 			//var y = d3.scale.linear().range([0, height]);
+			
+			tooltip = d3.select("body")
+				.append("div")
+				.attr("class","tooltip");
 
-			var updateKeywords = function() {
+			// get coordinates from brush extent
+			var getCoords = function() {
 				var extent = brush.extent(),
 					coordStart = x(extent[0]),
 					coordEnd = x(extent[1]),
 					start = projection.invert([coordStart, null]),
 					end = projection.invert([coordEnd, null]);
 
-				console.log("extent", start, end);
+				return [start[0], end[0]];
+			}
 
-				//lat.filterRange([end[0], start[0]]);
-				lon.filterRange([start[0], end[0]]);
+			// filter keywords by latitude
+			var updateKeywords = function() {
+				var extent = brush.extent(),
+					coordStart = x(extent[0]),
+					coordEnd = x(extent[1]),
+					start = projection.invert([coordStart, null]),
+					end = projection.invert([coordEnd, null]),
+					coords = [start[0], end[0]];
+
+				//lat.filterRange(coords]);
+				lon.filterRange(coords);
 
 				drawKeywords();
 			}				
 
-			var brushend = function() {
+			var buildBrush = function() {
+				brush = d3.svg.brush()
+					.x(x)
+					.on("brushstart", startbrush)
+					.on("brush", updateKeywords)
+					.on("brushend", brushend);
 
+				brushSvg = svg.append("g")
+					.attr("class", "brush")
+					.call(brush)
+					.selectAll('rect')
+					.attr("height", height);
+
+				// set initial parameters for brush handlers	
+				d3.selectAll(".resize")				
+					.select("rect")
+						.attr("visibility", "visible")
+						.attr("height", handleHeight)
+						.attr("fill", "#888")
+						.attr("transform","translate(0," + (height/2 - handleHeight/2) + ")")
+						.style("visibility", "visible");
+
+				// vertical animation of brush handlers		
+				d3.select('.brush').on("mousemove", function() {
+					var _y = d3.mouse(this)[1];
+
+					d3.selectAll(".resize")				
+						.select("rect")
+						.attr("transform","translate(0," + (_y - handleHeight/2) + ")")
+				});	
+
+			}
+
+			var startbrush = function() {
+				svg.selectAll('.point')
+					.classed("selected", false)
+					.style("opacity", .3);
+			}
+
+			var brushend = function() {
 				if (brush.empty()) {
 					setBrushDefaults();
 				}
@@ -191,18 +290,9 @@
 				
 				updateKeywords();
 			}
-
-			brush = d3.svg.brush()
-				.x(x)
-				.on("brush", updateKeywords)
-				.on("brushend", brushend);
-		
-			svg.append("g")
-				.attr("class", "brush")
-				.call(brush)
-				.selectAll('rect')
-				.attr("height", height);
-
+	
+			
+			// load world data
 			d3.json('world-50m.json', function(error, world) {
 
 				if (error) throw error;
@@ -216,12 +306,18 @@
 						.attr("class", "land")
 						.attr("d", path)
 						.style("fill", function(d, i) { return color(i % 10); });
-
-				drawMarkers();		
+				
+				buildBrush();
+				drawMarkers();
 				setBrushDefaults();
-			});
 
+				// cancel click's clear brush	
+				//d3.select("g.brush .background")
+				//	.attr("width",0);
 
+			});		
+
+			// draw all points from dataset
 			var drawMarkers = function() {
 
 				d3.selectAll('.point').remove();
@@ -235,19 +331,17 @@
 						.attr("cx", function(d){ return projection([d.lon,d.lat])[0]; })
 						.attr("cy", function(d) { return projection([d.lon,d.lat])[1]; })
 						.attr("r", 3)
-						.attr("class", "point")
-						.on("mouseover", function(d) {
-							console.log(d);
-						});
+						.attr("class", "point");						
 
 				points.data(data).exit().remove();
 			}
 
-
+			// draw keywords filtered by longitude range selected by brush
 			var drawKeywords = function() {
 				
 				var f = [], _keywords = keywords();
 
+				// transform data
 				for (var i in _keywords) {
 					f.push({ key: i, value: _keywords[i] });
 				}
@@ -259,6 +353,7 @@
 				sort(f, 0, f.length);
 				f.reverse();
 				
+				// refresh keywords list
 				d3.selectAll(".keyword").remove();
 				
 				var h = 20;
@@ -272,28 +367,69 @@
 						.attr("dy", ".35em")
 						.text(function(d) { return d.key + " (" + d.value + ")"; })
 						.on('click', function(item, ev) {
-							console.log(item, ev);
-
-							//lat.filterAll();
+							//console.log(item, ev);
 
 							keyword.filterExact(item.key);
 
 							selectMarkers();
-						})
+						});
 
 			}
 
+			// mark as selected the filtered markers on selecting a keyword
 			var selectMarkers = function() {
 
 				svg.selectAll('.point')
-					.classed("selected", false);	
+					.classed("selected", false)
+					.style("opacity", .3)
+					.attr("r", 3);
 
 				var markers = keyword.top(Infinity);
 
 				points
 					.data(markers, function(d){ return [d.lon, d.lat]; })
-					.classed("selected", true);
+					.classed("selected", true)
+					.attr("r", 7)
+					.on("mouseover", function(d) {
+						
+						tooltip
+							.style("left", d3.event.pageX)
+							.style("top", d3.event.pageY)							
+							.html('<a href="' + d.url + '" target="_blank">' + d.url + '</a>');
+
+						tooltip.transition()
+							.duration(200)
+							.style("opacity", 1);	
+
+
+					})
+					.on("mouseout", function() {
+						tooltip.transition()
+							.duration(2000)
+							.style("opacity", 0);	
+					});
+
+				d3.selectAll(".point:not(.selected)")
+					.style("opacity", .03);	
+
+				// var cx_ = cx || d3.extent(svg.selectAll(".selected"), function(d){ return d.lon; }),
+				// 	cy_ = cy || d3.extent(svg.selectAll(".selected"), function(d){ return d.lat; });
+				
+				// var view = [projection([cx[0],cx[1]])]
+
+				// var transition = d3.transition()
+			 //        .duration(750)
+			 //        .tween("zoom", function(d) {
+			 //        	var i = d3.interpolateZoom(view, [focus.x, focus.y, focus.r * 2 + margin]);
+			 //        	return function(t) { zoomTo(i(t)); };
+			 //        });	
 			}
+			
+			// var zoomed = function() {
+
+			// 	projection.translate(d3.event.translate).scale(d3.event.scale);
+			// 	svg.selectAll("path").attr("d", path);	
+			// }
 
 		});
 
